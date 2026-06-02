@@ -162,7 +162,7 @@ pub fn collect(client: &mut Transport, device_id: u8, base_addr: u16) -> Result<
         }
 
         // TODO: Process nested groups (e.g. in 706)
-        if !def.groups.is_empty() {
+        if !def.group.groups.is_empty() {
             eprintln!("WARN: Module contains nested groups (not implemented yet)");
         }
 

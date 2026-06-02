@@ -3,35 +3,57 @@ use std::io::Write;
 
 use anyhow::Result;
 
-use crate::sunspec::{IntOrString, PointType, Block};
+use crate::sunspec::{Block, IntOrString, PointType, State};
 
 /// Write a telegraf configuration for the given fields.
 ///
 /// - Expects the fields to be in a reasonable order (ideally sorted by address but not required)
 /// - Expects all fields to be accessible as (read-only) registers.
 pub fn write_config(mut f: impl Write, block: &Block) -> Result<()> {
-    if block.fields.is_empty() {
-        return Ok(());
-    }
-
-    writeln!(f, "# Sunspec module {}", block.module_id)?;
+    write!(
+        f,
+        "[[inputs.modbus.metric]] # Sunspec module {}",
+        block.module_id
+    )?;
     if let Some(s) = &block.group.label {
-        writeln!(f, "# {}", s)?;
+        writeln!(f, " {}", s)?;
+    } else {
+        writeln!(f)?;
     }
-    writeln!(f, "[[inputs.modbus.metric]]")?;
     writeln!(f, "slave_id = {}", block.device_id)?;
     writeln!(f, "byte_order = \"ABCD\"")?;
-    writeln!(f, "measurement = \"{}\"", block.group.name)?;
+    writeln!(
+        f,
+        "measurement = \"sunspec_{}_{}\"",
+        block.module_id, block.group.name
+    )?;
+    writeln!(
+        f,
+        "tags.manufacturer = \"{}\"",
+        block.device_info.manufacturer
+    )?;
+    writeln!(f, "tags.model = \"{}\"", block.device_info.model)?;
+    writeln!(f, "tags.options = \"{}\"", block.device_info.options)?;
+    writeln!(f, "tags.sn = \"{}\"", block.device_info.sn)?;
     writeln!(f, "fields = [")?;
     let mut wants_empty_line = false;
     let mut first = true;
     for e in &block.fields {
-        let commented = e.point.is_static;
+        // No use fetching and storing fields that are not
+        // changing (at least not regularly).
+        // The below fields are marked static in sunspec because they rarely change,
+        // but they still make sense as fields in influx/telegraf.
+        let include = !e.point.is_static
+            || (block.module_id == 1 && e.point.name == "Vr")
+            || e.state == State::SFUsedByHasValue;
+        let commented = !include || e.state == State::ProbablyNotImplemented;
 
         // If we have a comment before the line: Separate it from other lines
         wants_empty_line |= match e.point.typ {
             PointType::Enum16 | PointType::Enum32 => true,
-            PointType::Bitfield16 | PointType::Bitfield32 | PointType::Bitfield64 => !e.point.symbols.is_empty(),
+            PointType::Bitfield16 | PointType::Bitfield32 | PointType::Bitfield64 => {
+                !e.point.symbols.is_empty()
+            }
             _ => false,
         };
 
@@ -48,7 +70,11 @@ pub fn write_config(mut f: impl Write, block: &Block) -> Result<()> {
             write!(
                 f,
                 "    # Enum {}: ",
-                e.point.label.as_ref().or(e.point.desc.as_ref()).unwrap_or(&e.point.name)
+                e.point
+                    .label
+                    .as_ref()
+                    .or(e.point.desc.as_ref())
+                    .unwrap_or(&e.point.name)
             )?;
             for sym in &e.point.symbols {
                 let serde_json::Value::Number(value) = &sym.value else {
@@ -59,16 +85,17 @@ pub fn write_config(mut f: impl Write, block: &Block) -> Result<()> {
             writeln!(f, "")?;
             wants_empty_line = true;
         }
-        
 
         // Main line
         if commented {
-            write!(f, "# ")?;
+            write!(f, "    # ")?;
+        } else {
+            write!(f, "    ")?;
         }
         let typ = type_ident(e.point.typ);
         write!(
             f,
-            "    {{ address={}, name=\"{}\", type=\"{}\"",
+            "{{ address={}, name=\"{}\", type=\"{}\"",
             e.addr, e.point.name, typ
         )?;
         match e.point.typ {
@@ -90,8 +117,11 @@ pub fn write_config(mut f: impl Write, block: &Block) -> Result<()> {
             if let Some(units) = &e.point.units {
                 write!(f, " Unit: {},", units)?;
             }
-            if let Some(s) = e.point.desc.as_ref().or(e.point.label.as_ref()) {
-                write!(f, " {}", s)?;
+            if let Some(s) = &e.point.label {
+                write!(f, " {},", s)?;
+            }
+            if let Some(s) = &e.point.desc {
+                write!(f, " {},", s)?;
             }
             if e.point.is_static {
                 write!(f, " (static)")?;

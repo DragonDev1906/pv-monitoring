@@ -6,6 +6,7 @@ pub struct Module {
     pub group: Group,
 }
 #[derive(Debug, Deserialize, Clone)]
+#[allow(unused)]
 pub struct Group {
     pub name: String,
     #[serde(rename = "type")]
@@ -25,6 +26,7 @@ pub struct Group {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+#[allow(unused)]
 pub struct Point {
     pub name: String,
     #[serde(rename = "type")]
@@ -53,6 +55,7 @@ pub struct Point {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+#[allow(unused)]
 pub struct Symbol {
     pub name: String,
     pub value: serde_json::Value,

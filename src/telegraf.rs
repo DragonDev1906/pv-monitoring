@@ -3,20 +3,29 @@ use std::io::Write;
 
 use anyhow::Result;
 
-use crate::sunspec::{Field, IntOrString, PointType};
+use crate::sunspec::{IntOrString, PointType, Block};
 
 /// Write a telegraf configuration for the given fields.
 ///
 /// - Expects the fields to be in a reasonable order (ideally sorted by address but not required)
 /// - Expects all fields to be accessible as (read-only) registers.
-pub fn write_config(mut f: impl Write, name: &str, device_id: u8, fields: &[Field]) -> Result<()> {
+pub fn write_config(mut f: impl Write, block: &Block) -> Result<()> {
+    if block.fields.is_empty() {
+        return Ok(());
+    }
+
+    writeln!(f, "# Sunspec module {}", block.module_id)?;
+    if let Some(s) = &block.group.label {
+        writeln!(f, "# {}", s)?;
+    }
     writeln!(f, "[[inputs.modbus.metric]]")?;
-    writeln!(f, "slave_id = {}", device_id)?;
+    writeln!(f, "slave_id = {}", block.device_id)?;
     writeln!(f, "byte_order = \"ABCD\"")?;
-    writeln!(f, "measurement = \"{}\"", name)?;
+    writeln!(f, "measurement = \"{}\"", block.group.name)?;
     writeln!(f, "fields = [")?;
     let mut wants_empty_line = false;
-    for e in fields {
+    let mut first = true;
+    for e in &block.fields {
         let commented = e.point.is_static;
 
         // If we have a comment before the line: Separate it from other lines
@@ -27,10 +36,12 @@ pub fn write_config(mut f: impl Write, name: &str, device_id: u8, fields: &[Fiel
         };
 
         // Use empty lines to clearly indicate where a comment belongs to.
-        if wants_empty_line {
+        if wants_empty_line && !first {
             writeln!(f, "")?;
             wants_empty_line = false;
         }
+
+        first = false;
 
         // Comment
         if let PointType::Enum16 | PointType::Enum32 = e.point.typ {

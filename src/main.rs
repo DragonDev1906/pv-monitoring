@@ -25,10 +25,12 @@ fn main() -> anyhow::Result<()> {
     };
     let mut client = modbus::Transport::new_with_cfg(addr, cfg)?;
 
-    eprintln!();
     let out = sunspec::collect(&mut client, DEVICE_ID, BASE_ADDR)?;
 
-    telegraf::write_config(std::io::stdout(), "combined", DEVICE_ID, &out.fields)?;
+    eprintln!();
+    for block in &out.blocks {
+        telegraf::write_config(std::io::stdout(), block)?;
+    }
 
     client.close()?;
     Ok(())

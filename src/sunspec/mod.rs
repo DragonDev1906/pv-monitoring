@@ -4,7 +4,7 @@ use anyhow::Result;
 use modbus::{Client, Transport};
 
 mod json_model;
-pub use json_model::{IntOrString, Module, Point, PointType};
+pub use json_model::{IntOrString, Module, Point, PointType, Group};
 
 fn url(module: u16) -> String {
     format!(
@@ -16,7 +16,7 @@ fn url(module: u16) -> String {
 #[derive(Debug)]
 pub struct Output {
     pub devices: Vec<DiscoveredDevice>,
-    pub fields: Vec<Field>,
+    pub blocks: Vec<Block>,
     pub len: u16,
 }
 
@@ -27,8 +27,15 @@ pub struct DiscoveredDevice {
 }
 
 #[derive(Debug)]
-pub struct Field {
+pub struct Block {
     pub device_id: u8,
+    pub module_id: usize,
+    pub group: Group,
+    pub fields: Vec<Field>,
+}
+
+#[derive(Debug)]
+pub struct Field {
     pub addr: u16,
     pub point: Point,
     pub value: Vec<u16>,
@@ -42,7 +49,7 @@ pub fn collect(client: &mut Transport, device_id: u8, base_addr: u16) -> Result<
     assert_eq!(magic, [0x5375, 0x6e53], "Expected SunS constant");
 
     let mut devices = vec![];
-    let mut fields = vec![];
+    let mut blocks = vec![];
 
     let mut haddr = base_addr + 2;
     loop {
@@ -95,6 +102,7 @@ pub fn collect(client: &mut Transport, device_id: u8, base_addr: u16) -> Result<
         // Go through all registers (points), log their current value and add it to the lists.
         // dbg!(&values);
         let mut a = 0u16;
+        let mut fields = vec![];
         for p in &def.group.points[2..] {
             // For some reason trailing padding fields are not honored.
             if a + p.size > values.len() as u16 {
@@ -142,7 +150,6 @@ pub fn collect(client: &mut Transport, device_id: u8, base_addr: u16) -> Result<
 
             if !p.is_static {
                 fields.push(Field {
-                    device_id,
                     addr,
                     point: p.clone(),
                     value: values.to_vec(),
@@ -152,12 +159,19 @@ pub fn collect(client: &mut Transport, device_id: u8, base_addr: u16) -> Result<
             a += p.size;
         }
 
+        blocks.push(Block{
+            device_id,
+            module_id: def.id,
+            // PERFORMANCE: We could probably strip the points and subgroups.
+            group: def.group.clone(),
+            fields,
+        });
         haddr += 2 + len;
     }
 
     Ok(Output {
         devices,
-        fields,
+        blocks,
         len: haddr + 1 - base_addr,
     })
 }

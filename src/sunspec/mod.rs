@@ -82,7 +82,7 @@ pub fn collect(client: &mut Transport, device_id: u8, base_addr: u16) -> Result<
             }
         };
         eprintln!(
-            "\n{haddr}: Sunspec module {module_id} ({len} registers): {}",
+            "\n\x1b[94m{haddr}: Sunspec module {module_id} ({len} registers): {}\x1b[0m",
             def.group.label.as_ref().unwrap_or(&def.group.name)
         );
 
@@ -111,60 +111,7 @@ pub fn collect(client: &mut Transport, device_id: u8, base_addr: u16) -> Result<
         );
 
         // Go through all registers (points), log their current value and add it to the lists.
-        // dbg!(&values);
-        let mut a = 0u16;
-        let mut fields = vec![];
-        for p in &def.group.points[2..] {
-            // For some reason trailing padding fields are not honored.
-            if a + p.size > values.len() as u16 {
-                eprintln!(
-                    "INFO: Block is missing field at the end: {} (type: {:?})",
-                    &p.name, &p.typ
-                );
-                continue;
-            }
-
-            // Values shared between basically all match arms.
-            let values = &values[usize::from(a)..(usize::from(a) + usize::from(p.size))];
-            let addr = haddr + 2 + a;
-
-            // Decide what to do
-            use PointType as T;
-            match p.typ {
-                T::Int16 | T::Int32 | T::Int64 => print_int(addr, p, &values, None),
-                // Raw16
-                T::Uint16 | T::Uint32 | T::Uint64 | T::Acc16 | T::Acc32 | T::Acc64 => {
-                    print_uint(addr, p, &values, None)
-                }
-                T::Bitfield16 | T::Bitfield32 | T::Bitfield64 => {
-                    print_bitfield(addr, p, &values, None)
-                }
-                T::Enum16 => print_enum16(addr, p, values[0], None),
-                // Enum3A, Float32, Float642
-                T::String => print_string(addr, p, &values, None),
-                T::Pad => {}
-                // Ipaddr, Ipv6addr, Eui48
-                T::Sunssf => print_int(addr, p, &values, Some("Scale Factor")),
-                // Count,
-                _ => print_field(addr, p, &values, None, not_implemented_heuristic(p, values)),
-            }
-
-            // Add all fields including static ones,
-            // this way the main function or the config writer can decide what to do.
-            fields.push(Field {
-                addr,
-                point: p.clone(),
-                value: values.to_vec(),
-                state: State::HasValue, // Heuristic runs in set_states.
-            });
-
-            a += p.size;
-        }
-
-        // TODO: Process nested groups (e.g. in 706)
-        if !def.group.groups.is_empty() {
-            eprintln!("WARN: Module contains nested groups (not implemented yet)");
-        }
+        let mut fields = process_group(haddr, &def.group, 2, &values, &mut 0, "", &[])?;
 
         if module_id == 1 {
             current_device_info = deviceinfo::parse_mod1(&fields).unwrap();
@@ -186,6 +133,114 @@ pub fn collect(client: &mut Transport, device_id: u8, base_addr: u16) -> Result<
     Ok(Output {
         blocks,
         len: haddr + 1 - base_addr,
+    })
+}
+
+/// (Currently) only returns the direct fields, not those in groups. pfields are included in that list.
+fn process_group(haddr: u16, group: &Group, skip: usize, values: &[u16], a: &mut u16, prefix: &str, pfields: &[&Field]) -> Result<Vec<Field>> {
+    let mut fields = vec![];
+    process_points(haddr, &group, skip, &values, a, &mut fields, prefix)?;
+
+    let mut pf = vec![];
+    pf.extend(pfields);
+    pf.extend(&fields);
+
+    // For now we don't add group content to the returned field data,
+    // we probably want that in a separate place.
+    for g in &group.groups {
+        // Print a header for the group
+        eprint!("\x1b[94m{}: Group {}{}:", haddr + 2 + *a, prefix, g.name);
+        if let Some(s) = &g.label {
+            eprint!(" {s}");
+        }
+        if g.label != g.desc {
+            if let Some(s) = &g.desc {
+                eprint!(" {s}");
+            }
+        }
+
+        match &g.count {
+            IntOrString::Int(n) => eprint!(" (count={n})"),
+            IntOrString::String(s) => eprint!(" (count={{{s}}}"),
+        };
+        eprintln!("\x1b[0m");
+
+        let n = match &g.count {
+            IntOrString::Int(n) => *n,
+            IntOrString::String(s) => {
+                // dbg!(pfields, &s);
+                let f = pf.iter().find(|f| f.point.name == *s).unwrap();
+                f.value[0].into()
+            }
+        };
+
+        for i in 0..n {
+            // Process everything in the group
+            let prefix_ = match prefix {
+                "" if n == 1 => format!("{}_", g.name),
+                "" => format!("{}_{}_", g.name, i),
+                _ if n == 1 => format!("{}{}_", prefix, g.name),
+                _ => format!("{}{}_{}_", prefix, g.name, i),
+            };
+            process_group(haddr, g, 0, values, a, &prefix_, &pf)?;
+        }
+    }
+
+    Ok(fields)
+}
+
+fn process_points(haddr: u16, group: &Group, skip: usize, values: &[u16], a: &mut u16, fields: &mut Vec<Field>, prefix: &str) -> Result<()> {
+    for p in &group.points[skip..] {
+        // For some reason trailing padding fields are not honored.
+        if *a + p.size > values.len() as u16 {
+            eprintln!(
+                "INFO: Block is missing field at the end: {} (type: {:?})",
+                &p.name, &p.typ
+            );
+            continue;
+        }
+
+        let field = process_point(haddr, *a, p, &values, prefix)?;
+        fields.push(field);
+
+        *a += p.size;
+    }
+    Ok(())
+}
+
+fn process_point(haddr: u16, a: u16, p: &Point, values: &[u16], prefix: &str) -> Result<Field> {
+    // Values shared between basically all match arms.
+    let values = &values[usize::from(a)..(usize::from(a) + usize::from(p.size))];
+    let addr = haddr + 2 + a;
+
+    // Decide what to do
+    use PointType as T;
+    match p.typ {
+        T::Int16 | T::Int32 | T::Int64 => print_int(addr, p, &values, None, prefix),
+        // Raw16
+        T::Uint16 | T::Uint32 | T::Uint64 | T::Acc16 | T::Acc32 | T::Acc64 => {
+            print_uint(addr, p, &values, None, prefix)
+        }
+        T::Bitfield16 | T::Bitfield32 | T::Bitfield64 => {
+            print_bitfield(addr, p, &values, None, prefix)
+        }
+        T::Enum16 => print_enum16(addr, p, values[0], None, prefix),
+        // Enum3A, Float32, Float642
+        T::String => print_string(addr, p, &values, None, prefix),
+        T::Pad => {}
+        // Ipaddr, Ipv6addr, Eui48
+        T::Sunssf => print_int(addr, p, &values, Some("Scale Factor"), prefix),
+        // Count,
+        _ => print_field(addr, p, &values, None, not_implemented_heuristic(p, values), prefix),
+    }
+
+    // Add all fields including static ones,
+    // this way the main function or the config writer can decide what to do.
+    Ok(Field {
+        addr,
+        point: p.clone(),
+        value: values.to_vec(),
+        state: State::HasValue, // Heuristic runs in set_states.
     })
 }
 
@@ -273,7 +328,7 @@ fn set_states(fields: &mut [Field]) {
     }
 }
 
-fn print_bitfield(addr: u16, p: &Point, value: &[u16], alt_label: Option<&str>) {
+fn print_bitfield(addr: u16, p: &Point, value: &[u16], alt_label: Option<&str>, prefix: &str) {
     let mut s = String::new();
     for sym in &p.symbols {
         let serde_json::Value::Number(ref sym_value) = sym.value else {
@@ -309,6 +364,7 @@ fn print_bitfield(addr: u16, p: &Point, value: &[u16], alt_label: Option<&str>) 
             format!("(0x{sum:x})"),
             alt_label,
             not_implemented_heuristic(p, value),
+            prefix,
         );
     } else {
         print_field(
@@ -317,21 +373,22 @@ fn print_bitfield(addr: u16, p: &Point, value: &[u16], alt_label: Option<&str>) 
             format!("{s} (0x{sum:x})"),
             alt_label,
             not_implemented_heuristic(p, value),
+            prefix,
         );
     }
 }
-fn print_enum16(addr: u16, p: &Point, value: u16, alt_label: Option<&str>) {
+fn print_enum16(addr: u16, p: &Point, value: u16, alt_label: Option<&str>, prefix: &str) {
     let sym = p.symbols.iter().find(|s| s.value == value);
     match sym {
-        None => print_field(addr, p, value, alt_label, value == 0xffff),
+        None => print_field(addr, p, value, alt_label, value == 0xffff, prefix),
         Some(sym) => {
             let value_str = format!("{} ({})", sym.name, sym.value);
-            print_field(addr, p, value_str, alt_label, false);
+            print_field(addr, p, value_str, alt_label, false, prefix);
         }
     }
 }
 
-fn print_int(addr: u16, p: &Point, value: &[u16], alt_label: Option<&str>) {
+fn print_int(addr: u16, p: &Point, value: &[u16], alt_label: Option<&str>, prefix: &str) {
     assert!(!value.is_empty());
     assert!(value.len() <= 4);
     // Take the sign bit and start with 0x00 or 0xff
@@ -343,15 +400,15 @@ fn print_int(addr: u16, p: &Point, value: &[u16], alt_label: Option<&str>) {
         sum |= *v as i64;
     }
 
-    print_field(addr, p, sum, alt_label, not_implemented_heuristic(p, value));
+    print_field(addr, p, sum, alt_label, not_implemented_heuristic(p, value), prefix);
 }
-fn print_uint(addr: u16, p: &Point, value: &[u16], alt_label: Option<&str>) {
+fn print_uint(addr: u16, p: &Point, value: &[u16], alt_label: Option<&str>, prefix: &str) {
     let mut sum = 0;
     for v in value {
         sum <<= 16;
         sum |= *v as u64;
     }
-    print_field(addr, p, sum, alt_label, not_implemented_heuristic(p, value));
+    print_field(addr, p, sum, alt_label, not_implemented_heuristic(p, value), prefix);
 }
 fn parse_string(value: &[u16]) -> String {
     let bytes = value
@@ -361,13 +418,14 @@ fn parse_string(value: &[u16]) -> String {
         .collect();
     String::from_utf8(bytes).unwrap()
 }
-fn print_string(addr: u16, p: &Point, value: &[u16], alt_label: Option<&str>) {
+fn print_string(addr: u16, p: &Point, value: &[u16], alt_label: Option<&str>, prefix: &str) {
     print_field(
         addr,
         p,
         parse_string(value),
         alt_label,
         not_implemented_heuristic(p, value),
+        prefix,
     );
 }
 
@@ -377,6 +435,7 @@ fn print_field(
     value: impl std::fmt::Debug,
     alt_label: Option<&str>,
     not_implemented_heuristic: bool,
+    prefix: &str,
 ) {
     if not_implemented_heuristic {
         eprint!("\x1b[90m");
@@ -385,7 +444,7 @@ fn print_field(
         "{}: {:40} {:<16} = {:?}",
         addr,
         p.label.as_deref().or(alt_label).unwrap_or_default(),
-        p.name,
+        format!("{}{}", prefix, p.name),
         value
     );
     match &p.sf {

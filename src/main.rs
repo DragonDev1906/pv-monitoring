@@ -1,5 +1,8 @@
 mod sunspec;
-mod telegraf;
+
+mod export {
+    pub mod telegraf;
+}
 
 fn main() -> anyhow::Result<()> {
     let mut args = std::env::args();
@@ -28,7 +31,7 @@ fn main() -> anyhow::Result<()> {
 
     eprintln!();
     for block in &out.blocks {
-        telegraf::write_config(std::io::stdout(), block)?;
+        export::telegraf::write_config(std::io::stdout(), block)?;
     }
 
     client.close()?;

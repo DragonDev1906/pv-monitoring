@@ -12,7 +12,7 @@ use crate::sunspec::{Block, IntOrString, PointType, State};
 pub fn write_config(mut f: impl Write, block: &Block) -> Result<()> {
     write!(
         f,
-        "[[inputs.modbus.metric]] # Sunspec module {}",
+        "    [[inputs.modbus.metric]] # Sunspec module {}",
         block.module_id
     )?;
     if let Some(s) = &block.group.label {
@@ -20,22 +20,14 @@ pub fn write_config(mut f: impl Write, block: &Block) -> Result<()> {
     } else {
         writeln!(f)?;
     }
-    writeln!(f, "slave_id = {}", block.device_id)?;
-    writeln!(f, "byte_order = \"ABCD\"")?;
+    writeln!(f, "    slave_id = {}", block.device_id)?;
+    writeln!(f, "    byte_order = \"ABCD\"")?;
     writeln!(
         f,
-        "measurement = \"sunspec_{}_{}\"",
+        "    measurement = \"sunspec_{}_{}\"",
         block.module_id, block.group.name
     )?;
-    writeln!(
-        f,
-        "tags.manufacturer = \"{}\"",
-        block.device_info.manufacturer
-    )?;
-    writeln!(f, "tags.model = \"{}\"", block.device_info.model)?;
-    writeln!(f, "tags.options = \"{}\"", block.device_info.options)?;
-    writeln!(f, "tags.sn = \"{}\"", block.device_info.sn)?;
-    writeln!(f, "fields = [")?;
+    writeln!(f, "    fields = [")?;
     let mut wants_empty_line = false;
     let mut first = true;
     for e in &block.fields {
@@ -69,7 +61,7 @@ pub fn write_config(mut f: impl Write, block: &Block) -> Result<()> {
         if let PointType::Enum16 | PointType::Enum32 = e.point.typ {
             write!(
                 f,
-                "    # Enum {}: ",
+                "        # Enum {}: ",
                 e.point
                     .label
                     .as_ref()
@@ -88,9 +80,9 @@ pub fn write_config(mut f: impl Write, block: &Block) -> Result<()> {
 
         // Main line
         if commented {
-            write!(f, "    # ")?;
+            write!(f, "        # ")?;
         } else {
-            write!(f, "    ")?;
+            write!(f, "        ")?;
         }
         let typ = type_ident(e.point.typ);
         write!(
@@ -110,7 +102,7 @@ pub fn write_config(mut f: impl Write, block: &Block) -> Result<()> {
             || e.point.label.is_some()
             || e.point.desc.is_some();
         if inline_comment {
-            write!(f, " }} \t#")?;
+            write!(f, " }}, \t#")?;
             if let Some(IntOrString::String(sf)) = &e.point.sf {
                 write!(f, " Scale: 10^{{{}}},", sf)?;
             }
@@ -128,7 +120,7 @@ pub fn write_config(mut f: impl Write, block: &Block) -> Result<()> {
             }
             writeln!(f, "")?;
         } else {
-            writeln!(f, " }}")?;
+            writeln!(f, " }},")?;
         }
 
         // Alternative bit expansion
@@ -147,7 +139,15 @@ pub fn write_config(mut f: impl Write, block: &Block) -> Result<()> {
             wants_empty_line = !e.point.symbols.is_empty();
         }
     }
-    writeln!(f, "]\n\n")?;
+    writeln!(f, "    ]\n")?;
+
+    // Telegraf apparently does not support the dotted keys syntax of toml.
+    writeln!(f, "        [inputs.modbus.metric.tags]")?;
+    writeln!(f, "        manufacturer = \"{}\"", block.device_info.manufacturer)?;
+    writeln!(f, "        model = \"{}\"", block.device_info.model)?;
+    writeln!(f, "        options = \"{}\"", block.device_info.options)?;
+    writeln!(f, "        sn = \"{}\"", block.device_info.sn)?;
+    writeln!(f, "\n\n")?;
 
     Ok(())
 }

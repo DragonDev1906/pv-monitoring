@@ -11,6 +11,8 @@ We connect via tcpmodbus to the Inverter and query all registers belonging to su
 
 In addition, it tries to detect register values that are not implemented by your inverter and comment them out, too.
 
+By default, bitifields (e.g. containing events) are kept as a single field, but the lines to treat them as individual bits are added as comments.
+
 ## Usage (Telegraf)
 First: Connect to the inverter, query via modbus and generate the configuration file:
 

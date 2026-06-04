@@ -22,7 +22,7 @@ First: Connect to the inverter, query via modbus and generate the configuration 
 cargo run -- 192.168.178.42:1502 | tee telegraf-sunspec.toml
 ```
 
-> [!info]
+> [!IMPORTANT]
 > The config file should be regenerated after hardware changes on the PV/Inverter setup, as that can change the register layout. It might also be necessary after firmware updates (less likely).
 
 Then add it to your Telegraf configuration file:
@@ -38,11 +38,11 @@ Then add it to your Telegraf configuration file:
   # Add the content of telegraf.sunspec.toml here
 ```
 
-> [!info] Suggestion
-> I have tested this with Influxdb and Grafana.
+> [!NOTE]
+> Suggestion: I have tested this with Influxdb and Grafana.
 
 ## Roadmap
-> [!info]
+> [!NOTE]
 > These may or may not happen, but this is where this project might go.
 
 - [ ] Grafana dashboard

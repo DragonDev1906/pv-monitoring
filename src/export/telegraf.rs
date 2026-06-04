@@ -131,7 +131,7 @@ pub fn write_config(mut f: impl Write, block: &Block) -> Result<()> {
                 };
                 writeln!(
                     f,
-                    "    # {{ address={}, name=\"{}_{}\", type=\"BIT\", bit={} }}",
+                    "        # {{ address={}, name=\"{}_{}\", type=\"BIT\", bit={} }}",
                     e.addr, e.point.name, sym.name, bit,
                 )?;
             }

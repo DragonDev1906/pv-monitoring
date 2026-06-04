@@ -1,5 +1,5 @@
 [package]
-name = "se-modbus-telegraf"
+name = "pv-monitoring"
 version = "0.1.0"
 edition = "2024"
 

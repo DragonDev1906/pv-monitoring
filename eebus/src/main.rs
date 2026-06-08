@@ -107,6 +107,16 @@ fn main() -> anyhow::Result<()> {
     let ski = key_id.0.encode_hex::<String>();
     println!("Other SKI: {ski}");
 
+    ship_handshake(&mut socket)?;
+
+    Ok(())
+}
+
+fn ship_handshake<S>(socket: &mut tungstenite::WebSocket<S>) -> anyhow::Result<()>
+where
+    S: std::io::Read,
+    S: std::io::Write,
+{
     // Ship is json over websocket (except for the first messages)
     // https://deepwiki.com/enbility/ship-go/6.2-handshake-process
 
@@ -219,8 +229,7 @@ fn main() -> anyhow::Result<()> {
 
     // SmeStateApproved
     // approveHandshake
-
-
+    // SmeStateComplete
     Ok(())
 }
 

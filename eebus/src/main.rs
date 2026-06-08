@@ -10,6 +10,8 @@ use tungstenite::client::ClientRequestBuilder;
 use tungstenite::protocol::Message;
 use tungstenite::Bytes;
 use serde::{Serialize, Deserialize};
+use x509_parser::{certificate::X509Certificate, prelude::FromDer, extensions::ParsedExtension};
+use hex::ToHex;
 
 #[derive(Debug)]
 struct NoServerCert;
@@ -81,6 +83,7 @@ fn main() -> anyhow::Result<()> {
     let tls = ClientConnection::new(Arc::new(cfg), server_name)?;
     let tls = StreamOwned::new(tls, tcp);
 
+
     // https://github.com/DerAndereAndi/eebus-rust/blob/dev/src/main.rs#L391
     let ws_key = tungstenite::handshake::client::generate_key();
     let req = ClientRequestBuilder::new(format!("{addr}/ship/").parse()?)
@@ -92,6 +95,17 @@ fn main() -> anyhow::Result<()> {
 
     let (mut socket, res) = tungstenite::client(req, tls)?;
     dbg!(&socket, res);
+
+    let server_certs = socket.get_ref().conn.peer_certificates().unwrap();
+    let der = server_certs[0].as_ref();
+    let cert = X509Certificate::from_der(der)?;
+    let oid = asn1_rs::oid!(2.5.29.14);
+    let ext = cert.1.get_extension_unique(&oid)?.unwrap().parsed_extension();
+    let ParsedExtension::SubjectKeyIdentifier(key_id) = ext else {
+        panic!("Unexpected extension at oid for SKI");
+    };
+    let ski = key_id.0.encode_hex::<String>();
+    println!("Other SKI: {ski}");
 
     // Ship is json over websocket (except for the first messages)
     // https://deepwiki.com/enbility/ship-go/6.2-handshake-process

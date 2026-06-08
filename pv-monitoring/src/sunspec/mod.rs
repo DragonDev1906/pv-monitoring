@@ -137,7 +137,15 @@ pub fn collect(client: &mut Transport, device_id: u8, base_addr: u16) -> Result<
 }
 
 /// (Currently) only returns the direct fields, not those in groups. pfields are included in that list.
-fn process_group(haddr: u16, group: &Group, skip: usize, values: &[u16], a: &mut u16, prefix: &str, pfields: &[&Field]) -> Result<Vec<Field>> {
+fn process_group(
+    haddr: u16,
+    group: &Group,
+    skip: usize,
+    values: &[u16],
+    a: &mut u16,
+    prefix: &str,
+    pfields: &[&Field],
+) -> Result<Vec<Field>> {
     let mut fields = vec![];
     process_points(haddr, &group, skip, &values, a, &mut fields, prefix)?;
 
@@ -189,7 +197,15 @@ fn process_group(haddr: u16, group: &Group, skip: usize, values: &[u16], a: &mut
     Ok(fields)
 }
 
-fn process_points(haddr: u16, group: &Group, skip: usize, values: &[u16], a: &mut u16, fields: &mut Vec<Field>, prefix: &str) -> Result<()> {
+fn process_points(
+    haddr: u16,
+    group: &Group,
+    skip: usize,
+    values: &[u16],
+    a: &mut u16,
+    fields: &mut Vec<Field>,
+    prefix: &str,
+) -> Result<()> {
     for p in &group.points[skip..] {
         // For some reason trailing padding fields are not honored.
         if *a + p.size > values.len() as u16 {
@@ -231,7 +247,14 @@ fn process_point(haddr: u16, a: u16, p: &Point, values: &[u16], prefix: &str) ->
         // Ipaddr, Ipv6addr, Eui48
         T::Sunssf => print_int(addr, p, &values, Some("Scale Factor"), prefix),
         // Count,
-        _ => print_field(addr, p, &values, None, not_implemented_heuristic(p, values), prefix),
+        _ => print_field(
+            addr,
+            p,
+            &values,
+            None,
+            not_implemented_heuristic(p, values),
+            prefix,
+        ),
     }
 
     // Add all fields including static ones,
@@ -400,7 +423,14 @@ fn print_int(addr: u16, p: &Point, value: &[u16], alt_label: Option<&str>, prefi
         sum |= *v as i64;
     }
 
-    print_field(addr, p, sum, alt_label, not_implemented_heuristic(p, value), prefix);
+    print_field(
+        addr,
+        p,
+        sum,
+        alt_label,
+        not_implemented_heuristic(p, value),
+        prefix,
+    );
 }
 fn print_uint(addr: u16, p: &Point, value: &[u16], alt_label: Option<&str>, prefix: &str) {
     let mut sum = 0;
@@ -408,7 +438,14 @@ fn print_uint(addr: u16, p: &Point, value: &[u16], alt_label: Option<&str>, pref
         sum <<= 16;
         sum |= *v as u64;
     }
-    print_field(addr, p, sum, alt_label, not_implemented_heuristic(p, value), prefix);
+    print_field(
+        addr,
+        p,
+        sum,
+        alt_label,
+        not_implemented_heuristic(p, value),
+        prefix,
+    );
 }
 fn parse_string(value: &[u16]) -> String {
     let bytes = value

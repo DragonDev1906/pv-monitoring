@@ -143,7 +143,11 @@ pub fn write_config(mut f: impl Write, block: &Block) -> Result<()> {
 
     // Telegraf apparently does not support the dotted keys syntax of toml.
     writeln!(f, "        [inputs.modbus.metric.tags]")?;
-    writeln!(f, "        manufacturer = \"{}\"", block.device_info.manufacturer)?;
+    writeln!(
+        f,
+        "        manufacturer = \"{}\"",
+        block.device_info.manufacturer
+    )?;
     writeln!(f, "        model = \"{}\"", block.device_info.model)?;
     writeln!(f, "        options = \"{}\"", block.device_info.options)?;
     writeln!(f, "        sn = \"{}\"", block.device_info.sn)?;
